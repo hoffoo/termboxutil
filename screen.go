@@ -1,36 +1,40 @@
 package termboxutil
 
 import (
-	termbox "github.com/nsf/termbox-go"
 	"errors"
+	termbox "github.com/nsf/termbox-go"
 	"sync"
 )
 
 type Screen struct {
 	sync.Mutex
-	ch chan termbox.Event
 
-	xpos, ypos int
-	Fg, Bg     termbox.Attribute
-	Rows       []Row
+	xpos, ypos   int
+	Fg, Bg       termbox.Attribute
+	Data		 []Row
+	Rows         []Row
+	selected     int               // selected row
+	RowFg, RowBg termbox.Attribute // selected row colors
+	scrollable   bool
+	scrollOffset int
 }
 
 type Row struct {
-	Text string
+	Text   string
 	Fg, Bg termbox.Attribute
 }
 
-func NewScreen(fg, bg termbox.Attribute) Screen {
-	return Screen{sync.Mutex{}, make(chan termbox.Event), 0, 0, fg, bg, nil}
+func NewScreen(fg, bg, rowFg, rowBg termbox.Attribute) Screen {
+	return Screen{sync.Mutex{}, 0, 0, fg, bg, nil, 0, rowFg, rowBg, false, 0}
 }
 
 func (s *Screen) Draw(data []string) error {
 
 	s.Lock()
-	s.Rows = make([]Row,len(data))
+	s.Rows = make([]Row, len(data))
 
 	for i, str := range data {
-		s.Rows[i] = Row{str, s.Fg, s.Bg}
+		s.Rows[i] = Row{str, s.RowFg, s.RowBg}
 	}
 
 	s.Unlock()
@@ -48,9 +52,15 @@ func (s *Screen) Redraw() error {
 		return err
 	}
 
-	for _, row := range s.Rows {
+	for i, row := range s.Rows[s.scrollOffset:] {
 		for _, c := range row.Text {
-			termbox.SetCell(s.xpos, s.ypos, rune(c), row.Fg, row.Bg)
+
+			if i == s.selected {
+				termbox.SetCell(s.xpos, s.ypos, rune(c), row.Fg, row.Bg)
+			} else {
+				termbox.SetCell(s.xpos, s.ypos, rune(c), s.Fg, s.Bg)
+			}
+
 			if s.xpos += 1; s.xpos > maxx {
 				break
 			}
@@ -66,6 +76,31 @@ func (s *Screen) Redraw() error {
 
 	s.Unlock()
 	return nil
+}
+
+// selects the next row
+func (s *Screen) NextRow() {
+	_, maxy := termbox.Size()
+	if s.selected == maxy-1 || s.selected > len(s.Rows) {
+		return
+	}
+	s.selected += 1
+}
+
+// selects the prev row
+func (s *Screen) PrevRow() {
+	if s.selected == 0 {
+		return
+	}
+	s.selected -= 1
+}
+
+func (s *Screen) Scrollable(f bool) {
+	s.scrollable = f
+}
+
+func (s *Screen) ScrollUp() {
+
 }
 
 func (s *Screen) MarkRow(i int, fg, bg termbox.Attribute) error {
