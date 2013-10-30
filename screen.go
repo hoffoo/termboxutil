@@ -11,12 +11,11 @@ type Screen struct {
 
 	xpos, ypos   int
 	Fg, Bg       termbox.Attribute
-	Data		 []Row
-	Rows         []Row
-	selected     int               // selected row
 	RowFg, RowBg termbox.Attribute // selected row colors
+	Rows         []Row
+	selected     int // selected row
 	scrollable   bool
-	scrollOffset int
+	scrollPos    int
 }
 
 type Row struct {
@@ -25,7 +24,7 @@ type Row struct {
 }
 
 func NewScreen(fg, bg, rowFg, rowBg termbox.Attribute) Screen {
-	return Screen{sync.Mutex{}, 0, 0, fg, bg, nil, 0, rowFg, rowBg, false, 0}
+	return Screen{sync.Mutex{}, 0, 0, fg, bg, rowFg, rowBg, nil, 0, false, 0}
 }
 
 func (s *Screen) Draw(data []string) error {
@@ -52,7 +51,7 @@ func (s *Screen) Redraw() error {
 		return err
 	}
 
-	for i, row := range s.Rows[s.scrollOffset:] {
+	for i, row := range s.Rows[s.scrollPos:] {
 		for _, c := range row.Text {
 
 			if i == s.selected {
@@ -78,29 +77,55 @@ func (s *Screen) Redraw() error {
 	return nil
 }
 
+func (s *Screen) CurrentRow() *Row {
+	return &s.Rows[s.selected+s.scrollPos]
+}
+
 // selects the next row
 func (s *Screen) NextRow() {
+
 	_, maxy := termbox.Size()
-	if s.selected == maxy-1 || s.selected > len(s.Rows) {
-		return
+	if s.scrollable == true {
+		if s.selected+s.scrollPos == len(s.Rows)-1 {
+			return // bottom of the visible output
+		} else if s.selected == maxy-1 {
+			s.ScrollDown()
+		} else {
+			s.selected += 1
+		}
+	} else {
+		s.selected += 1
 	}
-	s.selected += 1
 }
 
 // selects the prev row
 func (s *Screen) PrevRow() {
-	if s.selected == 0 {
-		return
-	}
-	s.selected -= 1
-}
 
-func (s *Screen) Scrollable(f bool) {
-	s.scrollable = f
+	if s.scrollable == false {
+		s.selected -= 1
+	} else {
+		if s.selected == 0 {
+			s.ScrollUp()
+		} else {
+			s.selected -= 1
+		}
+	}
 }
 
 func (s *Screen) ScrollUp() {
+	if s.scrollPos > 0 {
+		s.scrollPos -= 1
+	}
+}
 
+func (s *Screen) ScrollDown() {
+	s.scrollPos += 1
+}
+
+// set the window as scrollable - pass the offset as int
+// if zero scrolling is disabled
+func (s *Screen) Scrollable(togl bool) {
+	s.scrollable = togl
 }
 
 func (s *Screen) MarkRow(i int, fg, bg termbox.Attribute) error {
