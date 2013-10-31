@@ -179,8 +179,7 @@ func (w *Window) ScrollDown() {
 	w.scrollPos += 1
 }
 
-// set the Window as scrollable - pass the offset as int
-// if zero scrolling is disabled
+// toggle if NextRow() and PrevRow will scroll the window
 func (w *Window) Scrollable(togl bool) {
 	w.scrollable = togl
 }
