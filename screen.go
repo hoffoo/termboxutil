@@ -6,16 +6,27 @@ import (
 	"sync"
 )
 
-type Screen struct {
+var screenMutex sync.Mutex
+
+type Screen []*Window
+
+var curWindow *Window
+
+type Window struct {
 	sync.Mutex
 
-	xpos, ypos   int
+	xpos, ypos int
+	selected   int // selected row
+	scrollable bool
+	scrollPos  int
+	closing    bool
+	autoResize bool
+	screen     *Screen
+
 	Fg, Bg       termbox.Attribute
 	RowFg, RowBg termbox.Attribute // selected row colors
 	Rows         []Row
-	selected     int // selected row
-	scrollable   bool
-	scrollPos    int
+	CatchEvent   func(termbox.Event)
 }
 
 type Row struct {
@@ -23,123 +34,169 @@ type Row struct {
 	Fg, Bg termbox.Attribute
 }
 
-func NewScreen(fg, bg, rowFg, rowBg termbox.Attribute) Screen {
-	return Screen{sync.Mutex{}, 0, 0, fg, bg, rowFg, rowBg, nil, 0, false, 0}
+func (s *Screen) Focus(w *Window) {
+
+	screenMutex.Lock()
+	curWindow = w
+	screenMutex.Unlock()
 }
 
-func (s *Screen) Draw(data []string) error {
+func (s *Screen) NewWindow(fg, bg, rowFg, rowBg termbox.Attribute) Window {
 
-	s.Lock()
-	s.Rows = make([]Row, len(data))
+	screenMutex.Lock()
+	defer screenMutex.Unlock()
+
+	window := Window{sync.Mutex{}, 0, 0, 0, false, 0, false, true, s, fg, bg, rowFg, rowBg, nil, nil}
+
+	*s = append(*s, &window)
+	curWindow = &window
+
+	return window
+}
+
+func (s *Screen) Loop() {
+	for {
+		e := termbox.PollEvent()
+
+		// handle error
+		if e.Type == termbox.EventError {
+			panic(e.Err)
+		}
+
+		w := curWindow // TODO rename w to curWindow
+
+		// handle resize
+		if w.autoResize && e.Type == termbox.EventResize {
+			err := w.Redraw()
+			if err != nil {
+				panic(err) // TODO dont panic here
+			}
+
+			termbox.Flush()
+			continue
+		}
+
+		if w.CatchEvent != nil {
+			w.CatchEvent(e)
+		}
+	}
+}
+
+func (w *Window) Draw(data []string) error {
+
+	w.Lock()
+	w.selected = 0
+	w.scrollPos = 0
+	w.Rows = make([]Row, len(data))
 
 	for i, str := range data {
-		s.Rows[i] = Row{str, s.RowFg, s.RowBg}
+		w.Rows[i] = Row{str, w.RowFg, w.RowBg}
 	}
 
-	s.Unlock()
-	return s.Redraw()
+	w.Unlock()
+	return w.Redraw()
 }
 
-func (s *Screen) Redraw() error {
+func (w *Window) Redraw() error {
 
-	s.Lock()
+	w.Lock()
 
-	err := termbox.Clear(s.Fg, s.Bg)
+	err := termbox.Clear(w.Fg, w.Bg)
 	maxx, maxy := termbox.Size()
 
 	if err != nil {
 		return err
 	}
 
-	for i, row := range s.Rows[s.scrollPos:] {
+	for i, row := range w.Rows[w.scrollPos:] {
 		for _, c := range row.Text {
 
-			if i == s.selected {
-				termbox.SetCell(s.xpos, s.ypos, rune(c), row.Fg, row.Bg)
+			if i == w.selected {
+				termbox.SetCell(w.xpos, w.ypos, rune(c), row.Fg, row.Bg)
 			} else {
-				termbox.SetCell(s.xpos, s.ypos, rune(c), s.Fg, s.Bg)
+				termbox.SetCell(w.xpos, w.ypos, rune(c), w.Fg, w.Bg)
 			}
 
-			if s.xpos += 1; s.xpos > maxx {
+			if w.xpos += 1; w.xpos > maxx {
 				break
 			}
 		}
-		s.xpos = 0
+		w.xpos = 0
 
-		if s.ypos += 1; s.ypos > maxy {
+		if w.ypos += 1; w.ypos > maxy {
 			break
 		}
 	}
-	s.ypos = 0
-	s.xpos = 0 // redundant but lets avoid problems later
+	w.ypos = 0
+	w.xpos = 0 // redundant but lets avoid problems later
 
-	s.Unlock()
+	w.Unlock()
 	return nil
 }
 
-func (s *Screen) CurrentRow() *Row {
-	return &s.Rows[s.selected+s.scrollPos]
+func (w *Window) CurrentRow() *Row {
+	return &w.Rows[w.selected+w.scrollPos]
 }
 
 // selects the next row
-func (s *Screen) NextRow() {
+func (w *Window) NextRow() {
 
 	_, maxy := termbox.Size()
-	if s.scrollable == true {
-		if s.selected+s.scrollPos == len(s.Rows)-1 {
+	if w.scrollable == true {
+		if w.selected+w.scrollPos == len(w.Rows)-1 {
 			return // bottom of the visible output
-		} else if s.selected == maxy-1 {
-			s.ScrollDown()
+		} else if w.selected == maxy-1 {
+			w.ScrollDown()
 		} else {
-			s.selected += 1
+			w.selected += 1
 		}
 	} else {
-		s.selected += 1
+		w.selected += 1
 	}
 }
 
 // selects the prev row
-func (s *Screen) PrevRow() {
+func (w *Window) PrevRow() {
 
-	if s.scrollable == false {
-		s.selected -= 1
+	if w.scrollable == false {
+		w.selected -= 1
 	} else {
-		if s.selected == 0 {
-			s.ScrollUp()
+		if w.selected == 0 {
+			w.ScrollUp()
 		} else {
-			s.selected -= 1
+			w.selected -= 1
 		}
 	}
 }
 
-func (s *Screen) ScrollUp() {
-	if s.scrollPos > 0 {
-		s.scrollPos -= 1
+func (w *Window) ScrollUp() {
+	if w.scrollPos > 0 {
+		w.scrollPos -= 1
 	}
 }
 
-func (s *Screen) ScrollDown() {
-	s.scrollPos += 1
+func (w *Window) ScrollDown() {
+	w.scrollPos += 1
 }
 
-// set the window as scrollable - pass the offset as int
+// set the Window as scrollable - pass the offset as int
 // if zero scrolling is disabled
-func (s *Screen) Scrollable(togl bool) {
-	s.scrollable = togl
+func (w *Window) Scrollable(togl bool) {
+	w.scrollable = togl
 }
 
-func (s *Screen) MarkRow(i int, fg, bg termbox.Attribute) error {
-	if i < 0 || i > len(s.Rows)-1 {
+func (w *Window) MarkRow(i int, fg, bg termbox.Attribute) error {
+	if i < 0 || i > len(w.Rows)-1 {
 		return errors.New("termbox: unknown row")
 	}
 
-	row := &s.Rows[i]
+	row := &w.Rows[i]
 	row.Fg = fg
 	row.Bg = bg
 
 	return nil
 }
 
-func (s *Screen) UnmarkRow(i int) error {
-	return s.MarkRow(i, s.Fg, s.Bg)
+func (w *Window) UnmarkRow(i int) error {
+	return w.MarkRow(i, w.Fg, w.Bg)
 }
