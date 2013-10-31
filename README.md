@@ -5,20 +5,20 @@ A tiny utility to reduce repetitive code when using https://github.com/nsf/termb
 
 Introduces Screens and Windows, and an api to manage them.
 
-1. Screens
+###Screens
 - Contain windows
 - Loop() passing termbox events to appropriate window
 - Manage currently "focused" window
 
-2. Windows
+###Windows
 - Contain the actual data drawn
 - Have a handler function that is ran when the window is focused and key pressed or other termbox event occurs 
 - Can scroll their output
 - Can keep track of selected location (row on the screen or span)
-- Handle updates with Draw() and Redraw()
+- Update content with Draw() and Redraw()
 - Mutex blocks concurrent changes
 
-=== Example ===
+###Example
 
 ```go
 	// create us a new screen
@@ -93,14 +93,15 @@ Introduces Screens and Windows, and an api to manage them.
 		termbox.Flush()
 	}
 
-	// now start looping for input - this will block, passing any termbox event to the currently focused window
+	// now start looping for input - this will block, passing any termbox
+	// event to the currently focused window
 	screen.Loop()
 
 ```
 
 
 
-=== Notes ===
+###Notes
 
 - Tries to avoid flush except for when that is the only obvious option (on resize if windows are resizable) - Call termbox.Flush when you want to see any screen changes.
 - Tries to stay out of the way, and still give some nice features
