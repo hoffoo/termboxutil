@@ -25,7 +25,11 @@ Introduces Screens and Windows, and an api to manage them.
 	screen := termboxutil.Screen{}
 
 	// make us a window, not displayed yet
-	searchWindow := screen.NewWindow(termbox.ColorWhite, termbox.ColorDefault, termbox.ColorGreen, termbox.ColorBlack)
+	searchWindow := screen.NewWindow(
+		termbox.ColorWhite, 		// window foreground
+		termbox.ColorDefault,		// window background
+		termbox.ColorGreen,			// selected item foreground
+		termbox.ColorBlack)			// selected item background
 
 	// this is the main window, since created last it is already focused
 	// if we created out of order we can call screen.Focus(&mainWindow)
@@ -35,13 +39,10 @@ Introduces Screens and Windows, and an api to manage them.
 	err = mainWindow.Draw(filenames) // draw mainWindow's contents
 	// etc...
 
-
 	// when we are done flush the output to the screen
 	termbox.Flush()
 
-
 	// now create us a handler func for the main window
-
 	mainWindow.CatchEvent = func(event termbox.Event) {
 		// simple scrolling
 		if event.Ch == 'j' || event.Key == termbox.KeyArrowDown {
